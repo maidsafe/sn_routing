@@ -736,11 +736,6 @@
 <span id="735">735</span>
 <span id="736">736</span>
 <span id="737">737</span>
-<span id="738">738</span>
-<span id="739">739</span>
-<span id="740">740</span>
-<span id="741">741</span>
-<span id="742">742</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -993,26 +988,23 @@
         };
         <span class="kw">let</span> <span class="ident">src_name</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">name</span>();
 
-        <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">variant</span> {
+        <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span> {
             <span class="ident">Variant</span>::<span class="ident">SectionKnowledge</span> { <span class="ident">src_info</span>, <span class="ident">msg</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">src_info</span> <span class="op">=</span> <span class="ident">src_info</span>.<span class="ident">clone</span>();
                 <span class="self">self</span>.<span class="ident">update_section_knowledge</span>(<span class="ident">src_info</span>.<span class="number">0</span>, <span class="ident">src_info</span>.<span class="number">1</span>);
-                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">bounced_msg</span>) <span class="op">=</span> <span class="ident">msg</span> {
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span> <span class="ident">msg</span> {
                     <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
                         <span class="ident">sender</span>,
-                        <span class="ident">message</span>: <span class="kw-2">*</span><span class="ident">bounced_msg</span>.<span class="ident">clone</span>(),
+                        <span class="ident">message</span>: <span class="kw-2">*</span><span class="ident">message</span>,
                         <span class="ident">dest_info</span>,
                     }])
                 } <span class="kw">else</span> {
                     <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_sync</span>(<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="ident">network</span>.<span class="ident">clone</span>()).<span class="kw">await</span>
-            }
+            <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_sync</span>(<span class="ident">section</span>, <span class="ident">network</span>).<span class="kw">await</span>,
             <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">is_section</span>() {
-                    <span class="kw">let</span> <span class="ident">signed_relocate</span> <span class="op">=</span> <span class="ident">SignedRelocateDetails</span>::<span class="ident">new</span>(<span class="ident">msg</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
+                    <span class="kw">let</span> <span class="ident">signed_relocate</span> <span class="op">=</span> <span class="ident">SignedRelocateDetails</span>::<span class="ident">new</span>(<span class="ident">msg</span>)<span class="question-mark">?</span>;
                     <span class="prelude-val">Ok</span>(<span class="self">self</span>
                         .<span class="ident">handle_relocate</span>(<span class="ident">signed_relocate</span>)
                         .<span class="kw">await</span><span class="question-mark">?</span>
@@ -1022,19 +1014,17 @@
                     <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_relocate_promise</span>(<span class="kw-2">*</span><span class="ident">promise</span>, <span class="ident">msg</span>.<span class="ident">clone</span>()).<span class="kw">await</span>
-            }
-            <span class="ident">Variant</span>::<span class="ident">StartConnectivityTest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">TestConnectivity</span>(<span class="kw-2">*</span><span class="ident">name</span>)]),
+            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_relocate_promise</span>(<span class="ident">promise</span>, <span class="ident">msg</span>).<span class="kw">await</span>,
+            <span class="ident">Variant</span>::<span class="ident">StartConnectivityTest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">TestConnectivity</span>(<span class="ident">name</span>)]),
             <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">join_request</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
-                <span class="self">self</span>.<span class="ident">handle_join_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())
+                <span class="self">self</span>.<span class="ident">handle_join_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>)
             }
             <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedRequest</span>(<span class="ident">join_request</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
-                <span class="self">self</span>.<span class="ident">handle_join_as_relocated_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())
+                <span class="self">self</span>.<span class="ident">handle_join_as_relocated_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>)
             }
-            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="ident">content</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="kw-2">ref</span> <span class="ident">content</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">content</span>.<span class="ident">clone</span>());
                 <span class="self">self</span>.<span class="ident">handle_user_message</span>(<span class="ident">msg</span>, <span class="ident">bytes</span>).<span class="kw">await</span>
             }
@@ -1046,7 +1036,7 @@
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_bounced_untrusted_message</span>(
                     <span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>,
                     <span class="ident">dest_info</span>.<span class="ident">dest_section_pk</span>,
-                    <span class="kw-2">*</span><span class="ident">bounced_msg</span>.<span class="ident">clone</span>(),
+                    <span class="kw-2">*</span><span class="ident">bounced_msg</span>,
                 )<span class="question-mark">?</span>])
             }
             <span class="ident">Variant</span>::<span class="ident">SectionKnowledgeQuery</span> {
@@ -1055,8 +1045,8 @@
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_section_knowledge_query</span>(
-                    <span class="kw-2">*</span><span class="ident">last_known_key</span>,
-                    <span class="ident">returned_msg</span>.<span class="ident">clone</span>(),
+                    <span class="ident">last_known_key</span>,
+                    <span class="ident">returned_msg</span>,
                     <span class="ident">sender</span>,
                     <span class="ident">src_name</span>,
                     <span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">src_location</span>().<span class="ident">to_dst</span>(),
@@ -1065,27 +1055,27 @@
             <span class="ident">Variant</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
                 <span class="ident">elder_candidates</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elder_candidates</span>.<span class="ident">clone</span>()),
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="ident">dkg_key</span>, <span class="ident">elder_candidates</span>),
             <span class="ident">Variant</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_dkg_message</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">message</span>.<span class="ident">clone</span>(), <span class="ident">src_name</span>)
+                <span class="self">self</span>.<span class="ident">handle_dkg_message</span>(<span class="ident">dkg_key</span>, <span class="ident">message</span>, <span class="ident">src_name</span>)
             }
             <span class="ident">Variant</span>::<span class="ident">DkgFailureObservation</span> {
                 <span class="ident">dkg_key</span>,
                 <span class="ident">signed</span>,
                 <span class="ident">non_participants</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_failure_observation</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">non_participants</span>, <span class="kw-2">*</span><span class="ident">signed</span>),
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_failure_observation</span>(<span class="ident">dkg_key</span>, <span class="kw-2">&amp;</span><span class="ident">non_participants</span>, <span class="ident">signed</span>),
             <span class="ident">Variant</span>::<span class="ident">DkgFailureAgreement</span>(<span class="ident">signeds</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_dkg_failure_agreement</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">name</span>(), <span class="ident">signeds</span>)
+                <span class="self">self</span>.<span class="ident">handle_dkg_failure_agreement</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>, <span class="kw-2">&amp;</span><span class="ident">signeds</span>)
             }
             <span class="ident">Variant</span>::<span class="ident">Propose</span> {
                 <span class="ident">content</span>,
                 <span class="ident">signed_share</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
-                <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">content</span>.<span class="ident">clone</span>(), <span class="ident">signed_share</span>.<span class="ident">clone</span>());
+                <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">content</span>, <span class="ident">signed_share</span>.<span class="ident">clone</span>());
 
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">addr</span>) <span class="op">=</span> <span class="ident">sender</span> {
-                    <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">check_lagging</span>((<span class="ident">src_name</span>, <span class="ident">addr</span>), <span class="ident">signed_share</span>)<span class="question-mark">?</span>);
+                    <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">check_lagging</span>((<span class="ident">src_name</span>, <span class="ident">addr</span>), <span class="kw-2">&amp;</span><span class="ident">signed_share</span>)<span class="question-mark">?</span>);
                 }
 
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span><span class="question-mark">?</span>);
