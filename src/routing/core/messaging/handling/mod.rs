@@ -72,10 +72,33 @@ impl Core {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 let (entropy_commands, shall_be_handled) =
                     self.check_for_entropy(&msg, dest_info.clone()).await?;
+                let no_ae_commands = entropy_commands.is_empty();
                 commands.extend(entropy_commands);
                 if shall_be_handled {
                     info!("Entropy check passed. Handling useful msg!");
                     commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
+                } else if no_ae_commands {
+                    // For the case of receiving a JoinRequest not matching our prefix.
+                    let sender_name = msg.src.name();
+                    let sender_addr = if let Some(addr) = sender {
+                        addr
+                    } else {
+                        error!("JoinRequest from {:?} without address", sender_name);
+                        return Ok(commands);
+                    };
+                    let section_auth = self
+                        .network
+                        .closest(&sender_name)
+                        .unwrap_or_else(|| self.section.authority_provider());
+                    let variant = Variant::JoinResponse(Box::new(JoinResponse::Redirect(
+                        section_auth.clone(),
+                    )));
+                    trace!("Sending {:?} to {}", variant, sender_name);
+                    commands.push(self.send_direct_message(
+                        (sender_name, sender_addr),
+                        variant,
+                        section_auth.section_key(),
+                    )?);
                 }
             }
             MessageStatus::Untrusted => {
