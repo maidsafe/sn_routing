@@ -22,7 +22,7 @@ use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     node::{Network, NodeState, Peer, Proposal, RoutingMsg, Section, Variant},
     section_info::Error as TargetSectionError,
-    DestInfo, EndUser, Itinerary, SectionAuthorityProvider, SrcLocation,
+    DestInfo, EndUser, Itinerary, MessageId, SectionAuthorityProvider, SrcLocation,
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
@@ -294,7 +294,13 @@ impl Core {
     pub fn set_joins_allowed(&self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
-            commands.extend(self.propose(Proposal::JoinsAllowed(joins_allowed))?);
+            let active_members: Vec<XorName> = self
+                .section
+                .active_members()
+                .map(|peer| *peer.name())
+                .collect();
+            let msg_id = MessageId::from_content(&active_members)?;
+            commands.extend(self.propose(Proposal::JoinsAllowed((msg_id, joins_allowed)))?);
         }
         Ok(commands)
     }
