@@ -302,6 +302,15 @@
 <span id="301">301</span>
 <span id="302">302</span>
 <span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -326,6 +335,7 @@
     <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
     <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">relocation</span>::<span class="ident">RelocateState</span>,
     <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>, <span class="ident">SectionUtils</span>},
 };
@@ -473,7 +483,15 @@
                     <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">promote_and_demote_elders</span>()<span class="question-mark">?</span>);
                     <span class="comment">// Whenever there is an elders change, casting a round of joins_allowed</span>
                     <span class="comment">// proposals to sync.</span>
-                    <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">JoinsAllowed</span>(<span class="self">self</span>.<span class="ident">joins_allowed</span>))<span class="question-mark">?</span>);
+                    <span class="kw">let</span> <span class="ident">active_members</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
+                        .<span class="ident">section</span>
+                        .<span class="ident">active_members</span>()
+                        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>())
+                        .<span class="ident">collect</span>();
+                    <span class="kw">let</span> <span class="ident">msg_id</span> <span class="op">=</span> <span class="ident">MessageId</span>::<span class="ident">from_content</span>(<span class="kw-2">&amp;</span><span class="ident">active_members</span>)<span class="question-mark">?</span>;
+                    <span class="ident">commands</span>.<span class="ident">extend</span>(
+                        <span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">JoinsAllowed</span>((<span class="ident">msg_id</span>, <span class="self">self</span>.<span class="ident">joins_allowed</span>)))<span class="question-mark">?</span>,
+                    );
                 }
 
                 <span class="self">self</span>.<span class="ident">print_network_stats</span>();
