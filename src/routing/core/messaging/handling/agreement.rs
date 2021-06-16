@@ -81,7 +81,7 @@ impl Core {
                 )?])
             }
             Proposal::JoinsAllowed(joins_allowed) => {
-                self.joins_allowed = joins_allowed;
+                self.joins_allowed = joins_allowed.1;
                 Ok(vec![])
             }
         }

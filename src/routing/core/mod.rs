@@ -21,6 +21,7 @@ use crate::{
     messages::RoutingMsgUtils,
     network::NetworkUtils,
     node::Node,
+    peer::PeerUtils,
     relocation::RelocateState,
     section::{SectionAuthorityProviderUtils, SectionKeyShare, SectionKeysProvider, SectionUtils},
 };
@@ -168,7 +169,15 @@ impl Core {
                     commands.extend(self.promote_and_demote_elders()?);
                     // Whenever there is an elders change, casting a round of joins_allowed
                     // proposals to sync.
-                    commands.extend(self.propose(Proposal::JoinsAllowed(self.joins_allowed))?);
+                    let active_members: Vec<XorName> = self
+                        .section
+                        .active_members()
+                        .map(|peer| *peer.name())
+                        .collect();
+                    let msg_id = MessageId::from_content(&active_members)?;
+                    commands.extend(
+                        self.propose(Proposal::JoinsAllowed((msg_id, self.joins_allowed)))?,
+                    );
                 }
 
                 self.print_network_stats();
