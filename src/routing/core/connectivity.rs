@@ -155,7 +155,7 @@ impl Core {
         let mut result: Vec<Command> = Vec::new();
         for name in names.iter() {
             if let Some(info) = self.section.members().get(name) {
-                let info = info.clone().leave()?;
+                let info = info.leave()?;
                 if let Ok(commands) = self.send_proposal(&elders, Proposal::Offline(info)) {
                     result.extend(commands);
                 }

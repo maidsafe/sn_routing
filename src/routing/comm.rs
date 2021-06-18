@@ -124,7 +124,7 @@ impl Comm {
 
         let bytes = msg.serialize()?;
         self.endpoint
-            .send_message(bytes, &recipient.1)
+            .try_send_message(bytes, &recipient.1)
             .await
             .map_err(|err| {
                 error!("Sending to {:?} failed with {}", recipient, err);
@@ -279,19 +279,6 @@ impl Comm {
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
         trace!("Low level send for msg over qp2p");
-        // This will attempt to use a cached connection
-        if self
-            .endpoint
-            .send_message(msg.clone(), recipient)
-            .await
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        // If the sending of a message failed the connection would no longer
-        // exist in the pool. So we connect again and then send the message.
-        self.endpoint.connect_to(recipient).await?;
         self.endpoint.send_message(msg, recipient).await
     }
 }
