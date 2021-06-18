@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/section/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/section/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
@@ -470,7 +470,7 @@
 <span class="kw">mod</span> <span class="ident">section_peers</span>;
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">section_authority_provider</span>::<span class="ident">test_utils</span>;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span><span class="ident">::section_authority_provider::test_utils</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
     <span class="ident">node_state</span>::{
@@ -478,22 +478,22 @@
     },
     <span class="ident">section_authority_provider</span>::{<span class="ident">ElderCandidatesUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>},
     <span class="ident">section_keys</span>::{<span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>},
-    <span class="ident">section_peers</span>::<span class="ident">SectionPeersUtils</span>,
+    <span class="ident">section_peers::SectionPeersUtils</span>,
 };
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">dkg</span>::<span class="ident">SectionSignedUtils</span>,
+    <span class="ident">dkg::SectionSignedUtils</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
+    <span class="ident">peer::PeerUtils</span>,
     <span class="ident">ELDER_SIZE</span>, <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
 };
-<span class="kw">use</span> <span class="ident">secured_linked_list</span>::{<span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SecuredLinkedListError</span>, <span class="ident">SecuredLinkedList</span>};
-<span class="kw">use</span> <span class="ident">serde</span>::<span class="ident">Serialize</span>;
+<span class="kw">use</span> <span class="ident">secured_linked_list</span>::{<span class="ident">error::Error</span> <span class="kw">as</span> <span class="ident">SecuredLinkedListError</span>, <span class="ident">SecuredLinkedList</span>};
+<span class="kw">use</span> <span class="ident">serde::Serialize</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">node</span>::{<span class="ident">ElderCandidates</span>, <span class="ident">NodeState</span>, <span class="ident">Peer</span>, <span class="ident">Section</span>, <span class="ident">SectionPeers</span>, <span class="ident">SectionSigned</span>, <span class="ident">Signed</span>},
     <span class="ident">SectionAuthorityProvider</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections</span>::<span class="ident">BTreeSet</span>, <span class="ident">convert</span>::<span class="ident">TryInto</span>, <span class="ident">iter</span>, <span class="ident">marker</span>::<span class="ident">Sized</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections::BTreeSet</span>, <span class="ident">convert::TryInto</span>, <span class="ident">iter</span>, <span class="ident">marker::Sized</span>, <span class="ident">net::SocketAddr</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">SectionUtils</span> {
@@ -502,7 +502,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// Returns error if `section_auth` is not signed with the last key of `chain`.</span>
     <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">genesis_key</span>: <span class="ident">bls::PublicKey</span>,
         <span class="ident">chain</span>: <span class="ident">SecuredLinkedList</span>,
         <span class="ident">section_auth</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>
@@ -512,7 +512,7 @@
     <span class="doccomment">/// Creates `Section` for the first node in the network</span>
     <span class="kw">fn</span> <span class="ident">first_node</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>)<span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">genesis_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>;
+    <span class="kw">fn</span> <span class="ident">genesis_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls::PublicKey</span>;
 
     <span class="doccomment">/// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or</span>
     <span class="doccomment">/// its chain is not compatible with the chain of `self`.</span>
@@ -533,7 +533,7 @@
     <span class="comment">// Extend the section chain so it starts at `trusted_key` while keeping the last key intact.</span>
     <span class="kw">fn</span> <span class="ident">extend_chain</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">trusted_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">trusted_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls::PublicKey</span>,
         <span class="ident">full_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Section</span>, <span class="ident">SecuredLinkedListError</span><span class="op">&gt;</span>;
 
@@ -579,41 +579,41 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// Returns error if `section_auth` is not signed with the last key of `chain`.</span>
     <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">genesis_key</span>: <span class="ident">bls::PublicKey</span>,
         <span class="ident">chain</span>: <span class="ident">SecuredLinkedList</span>,
         <span class="ident">section_auth</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="ident">chain</span>.<span class="ident">last_key</span>() {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;can&#39;t create section: section_auth signed with incorrect key&quot;</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;can&#39;t create section: section_auth signed with incorrect key&quot;</span>);
             <span class="comment">// TODO: consider more specific error here.</span>
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         }
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">genesis_key</span>,
             <span class="ident">chain</span>,
             <span class="ident">section_auth</span>,
-            <span class="ident">members</span>: <span class="ident">SectionPeers</span>::<span class="ident">default</span>(),
+            <span class="ident">members</span>: <span class="ident">SectionPeers::default</span>(),
         })
     }
 
     <span class="doccomment">/// Creates `Section` for the first node in the network</span>
     <span class="kw">fn</span> <span class="ident">first_node</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>)<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">secret_key_set</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKeySet</span>::<span class="ident">random</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>());
+        <span class="kw">let</span> <span class="ident">secret_key_set</span> <span class="op">=</span> <span class="ident">bls::SecretKeySet::random</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rand::thread_rng</span>());
         <span class="kw">let</span> <span class="ident">public_key_set</span> <span class="op">=</span> <span class="ident">secret_key_set</span>.<span class="ident">public_keys</span>();
         <span class="kw">let</span> <span class="ident">secret_key_share</span> <span class="op">=</span> <span class="ident">secret_key_set</span>.<span class="ident">secret_key_share</span>(<span class="number">0</span>);
 
         <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span>
             <span class="ident">create_first_section_authority_provider</span>(<span class="kw-2">&amp;</span><span class="ident">public_key_set</span>, <span class="kw-2">&amp;</span><span class="ident">secret_key_share</span>, <span class="ident">peer</span>)<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">section</span> <span class="op">=</span> <span class="ident">Section</span>::<span class="ident">new</span>(
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">section</span> <span class="op">=</span> <span class="ident">Section::new</span>(
             <span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>,
-            <span class="ident">SecuredLinkedList</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>),
+            <span class="ident">SecuredLinkedList::new</span>(<span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>),
             <span class="ident">section_auth</span>,
         )<span class="question-mark">?</span>;
 
         <span class="kw">for</span> <span class="ident">peer</span> <span class="kw">in</span> <span class="ident">section</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">peers</span>() {
-            <span class="kw">let</span> <span class="ident">node_state</span> <span class="op">=</span> <span class="ident">NodeState</span>::<span class="ident">joined</span>(<span class="ident">peer</span>);
+            <span class="kw">let</span> <span class="ident">node_state</span> <span class="op">=</span> <span class="ident">NodeState::joined</span>(<span class="ident">peer</span>);
             <span class="kw">let</span> <span class="ident">signed</span> <span class="op">=</span> <span class="ident">create_first_signed</span>(<span class="kw-2">&amp;</span><span class="ident">public_key_set</span>, <span class="kw-2">&amp;</span><span class="ident">secret_key_share</span>, <span class="kw-2">&amp;</span><span class="ident">node_state</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">section</span>.<span class="ident">members</span>.<span class="ident">update</span>(<span class="ident">SectionSigned</span> {
                 <span class="ident">value</span>: <span class="ident">node_state</span>,
@@ -630,7 +630,7 @@
         <span class="prelude-val">Ok</span>((<span class="ident">section</span>, <span class="ident">section_key_share</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">genesis_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
+    <span class="kw">fn</span> <span class="ident">genesis_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls::PublicKey</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">genesis_key</span>
     }
 
@@ -638,13 +638,13 @@
     <span class="doccomment">/// its chain is not compatible with the chain of `self`.</span>
     <span class="kw">fn</span> <span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">other</span>: <span class="ident">Section</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">other</span>.<span class="ident">section_auth</span>.<span class="ident">self_verify</span>() {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;can&#39;t merge sections: other section_auth failed self-verification&quot;</span>);
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;can&#39;t merge sections: other section_auth failed self-verification&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         }
         <span class="kw">if</span> <span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">other</span>.<span class="ident">chain</span>.<span class="ident">last_key</span>() {
             <span class="comment">// TODO: use more specific error variant.</span>
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;can&#39;t merge sections: other section_auth signed with incorrect key&quot;</span>);
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;can&#39;t merge sections: other section_auth signed with incorrect key&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         }
 
         <span class="self">self</span>.<span class="ident">chain</span>.<span class="ident">merge</span>(<span class="ident">other</span>.<span class="ident">chain</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
@@ -687,7 +687,7 @@
             <span class="ident">new_section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>,
             <span class="ident">new_key_signed</span>.<span class="ident">signature</span>,
         ) {
-            <span class="macro">error</span><span class="macro">!</span>(
+            <span class="macro">error!</span>(
                 <span class="string">&quot;failed to insert key {:?} (signed with {:?}) into the section chain: {}&quot;</span>,
                 <span class="ident">new_section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>, <span class="ident">new_key_signed</span>.<span class="ident">public_key</span>, <span class="ident">error</span>,
             );
@@ -707,7 +707,7 @@
     <span class="doccomment">/// Update the member. Returns whether it actually changed anything.</span>
     <span class="kw">fn</span> <span class="ident">update_member</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">node_state</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">NodeState</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">node_state</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">chain</span>) {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;can&#39;t merge member {:?}&quot;</span>, <span class="ident">node_state</span>.<span class="ident">value</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;can&#39;t merge member {:?}&quot;</span>, <span class="ident">node_state</span>.<span class="ident">value</span>);
             <span class="kw">return</span> <span class="bool-val">false</span>;
         }
 
@@ -721,12 +721,12 @@
     <span class="comment">// Extend the section chain so it starts at `trusted_key` while keeping the last key intact.</span>
     <span class="kw">fn</span> <span class="ident">extend_chain</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">trusted_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">trusted_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls::PublicKey</span>,
         <span class="ident">full_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Section</span>, <span class="ident">SecuredLinkedListError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">chain</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">chain</span>.<span class="ident">extend</span>(<span class="ident">trusted_key</span>, <span class="ident">full_chain</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">chain</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">chain</span>,
-            <span class="prelude-val">Err</span>(<span class="ident">SecuredLinkedListError</span>::<span class="ident">InvalidOperation</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">SecuredLinkedListError::InvalidOperation</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// This means the tip of the chain is not reachable from `trusted_key`.</span>
                 <span class="comment">// Use the full chain instead as it is always trusted.</span>
                 <span class="self">self</span>.<span class="ident">chain</span>.<span class="ident">clone</span>()
@@ -758,22 +758,22 @@
     <span class="doccomment">/// Returns a set of candidate SectionAuthorityProviders.</span>
     <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">ElderCandidates</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">our_name</span>) {
-            <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>];
+            <span class="kw">return</span> <span class="macro">vec!</span>[<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>];
         }
 
         <span class="kw">let</span> <span class="ident">expected_peers</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">elder_candidates</span>(<span class="ident">ELDER_SIZE</span>);
-        <span class="kw">let</span> <span class="ident">expected_names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">expected_peers</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">name</span>).<span class="ident">cloned</span>().<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">expected_names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">expected_peers</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="ident">Peer::name</span>).<span class="ident">cloned</span>().<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">current_names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">authority_provider</span>().<span class="ident">names</span>();
 
         <span class="kw">if</span> <span class="ident">expected_names</span> <span class="op">=</span><span class="op">=</span> <span class="ident">current_names</span> {
-            <span class="macro">vec</span><span class="macro">!</span>[]
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="kw">crate</span>::<span class="ident">supermajority</span>(<span class="ident">current_names</span>.<span class="ident">len</span>()) {
-            <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ignore attempt to reduce the number of elders too much&quot;</span>);
-            <span class="macro">vec</span><span class="macro">!</span>[]
+            <span class="macro">vec!</span>[]
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="kw">crate</span><span class="ident">::supermajority</span>(<span class="ident">current_names</span>.<span class="ident">len</span>()) {
+            <span class="macro">warn!</span>(<span class="string">&quot;ignore attempt to reduce the number of elders too much&quot;</span>);
+            <span class="macro">vec!</span>[]
         } <span class="kw">else</span> {
             <span class="kw">let</span> <span class="ident">elder_candidates</span> <span class="op">=</span>
-                <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">expected_peers</span>, <span class="self">self</span>.<span class="ident">authority_provider</span>().<span class="ident">prefix</span>());
-            <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">elder_candidates</span>]
+                <span class="ident">ElderCandidates::new</span>(<span class="ident">expected_peers</span>, <span class="self">self</span>.<span class="ident">authority_provider</span>().<span class="ident">prefix</span>());
+            <span class="macro">vec!</span>[<span class="ident">elder_candidates</span>]
         }
     }
 
@@ -788,7 +788,7 @@
 
     <span class="doccomment">/// Returns members that are either joined or are left but still elders.</span>
     <span class="kw">fn</span> <span class="ident">active_members</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-        <span class="ident">Box</span>::<span class="ident">new</span>(
+        <span class="ident">Box::new</span>(
             <span class="self">self</span>.<span class="ident">members</span>
                 .<span class="ident">all</span>()
                 .<span class="ident">filter</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">info</span><span class="op">|</span> {
@@ -800,7 +800,7 @@
 
     <span class="doccomment">/// Returns adults from our section.</span>
     <span class="kw">fn</span> <span class="ident">adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-        <span class="ident">Box</span>::<span class="ident">new</span>(
+        <span class="ident">Box::new</span>(
             <span class="self">self</span>.<span class="ident">members</span>
                 .<span class="ident">mature</span>()
                 .<span class="ident">filter</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>())),
@@ -809,7 +809,7 @@
 
     <span class="doccomment">/// Returns live adults from our section.</span>
     <span class="kw">fn</span> <span class="ident">live_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-        <span class="ident">Box</span>::<span class="ident">new</span>(<span class="self">self</span>.<span class="ident">members</span>.<span class="ident">joined</span>().<span class="ident">filter_map</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">info</span><span class="op">|</span> {
+        <span class="ident">Box::new</span>(<span class="self">self</span>.<span class="ident">members</span>.<span class="ident">joined</span>().<span class="ident">filter_map</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">info</span><span class="op">|</span> {
             <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>(<span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">name</span>()) {
                 <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">peer</span>)
             } <span class="kw">else</span> {
@@ -869,8 +869,8 @@
             <span class="self">self</span>.<span class="ident">authority_provider</span>(),
         );
 
-        <span class="kw">let</span> <span class="ident">our_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">our_elders</span>, <span class="ident">our_prefix</span>);
-        <span class="kw">let</span> <span class="ident">other_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">other_elders</span>, <span class="ident">other_prefix</span>);
+        <span class="kw">let</span> <span class="ident">our_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates::new</span>(<span class="ident">our_elders</span>, <span class="ident">our_prefix</span>);
+        <span class="kw">let</span> <span class="ident">other_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates::new</span>(<span class="ident">other_elders</span>, <span class="ident">other_prefix</span>);
 
         <span class="prelude-val">Some</span>((<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>))
     }
@@ -885,27 +885,27 @@
 
 <span class="comment">// Create `SectionAuthorityProvider` for the first node.</span>
 <span class="kw">fn</span> <span class="ident">create_first_section_authority_provider</span>(
-    <span class="ident">pk_set</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKeySet</span>,
-    <span class="ident">sk_share</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKeyShare</span>,
+    <span class="ident">pk_set</span>: <span class="kw-2">&amp;</span><span class="ident">bls::PublicKeySet</span>,
+    <span class="ident">sk_share</span>: <span class="kw-2">&amp;</span><span class="ident">bls::SecretKeyShare</span>,
     <span class="kw-2">mut</span> <span class="ident">peer</span>: <span class="ident">Peer</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="ident">peer</span>.<span class="ident">set_reachable</span>(<span class="bool-val">true</span>);
     <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span>
-        <span class="ident">SectionAuthorityProvider</span>::<span class="ident">new</span>(<span class="ident">iter</span>::<span class="ident">once</span>(<span class="ident">peer</span>), <span class="ident">Prefix</span>::<span class="ident">default</span>(), <span class="ident">pk_set</span>.<span class="ident">clone</span>());
+        <span class="ident">SectionAuthorityProvider::new</span>(<span class="ident">iter::once</span>(<span class="ident">peer</span>), <span class="ident">Prefix::default</span>(), <span class="ident">pk_set</span>.<span class="ident">clone</span>());
     <span class="kw">let</span> <span class="ident">signed</span> <span class="op">=</span> <span class="ident">create_first_signed</span>(<span class="ident">pk_set</span>, <span class="ident">sk_share</span>, <span class="kw-2">&amp;</span><span class="ident">section_auth</span>)<span class="question-mark">?</span>;
-    <span class="prelude-val">Ok</span>(<span class="ident">SectionSigned</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>))
+    <span class="prelude-val">Ok</span>(<span class="ident">SectionSigned::new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>))
 }
 
 <span class="kw">fn</span> <span class="ident">create_first_signed</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Serialize</span><span class="op">&gt;</span>(
-    <span class="ident">pk_set</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKeySet</span>,
-    <span class="ident">sk_share</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKeyShare</span>,
+    <span class="ident">pk_set</span>: <span class="kw-2">&amp;</span><span class="ident">bls::PublicKeySet</span>,
+    <span class="ident">sk_share</span>: <span class="kw-2">&amp;</span><span class="ident">bls::SecretKeyShare</span>,
     <span class="ident">payload</span>: <span class="kw-2">&amp;</span><span class="ident">T</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="ident">payload</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidPayload</span>)<span class="question-mark">?</span>;
+    <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="ident">payload</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidPayload</span>)<span class="question-mark">?</span>;
     <span class="kw">let</span> <span class="ident">signature_share</span> <span class="op">=</span> <span class="ident">sk_share</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>);
     <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">pk_set</span>
-        .<span class="ident">combine_signatures</span>(<span class="ident">iter</span>::<span class="ident">once</span>((<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="ident">signature_share</span>)))
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidSignatureShare</span>)<span class="question-mark">?</span>;
+        .<span class="ident">combine_signatures</span>(<span class="ident">iter::once</span>((<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="ident">signature_share</span>)))
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidSignatureShare</span>)<span class="question-mark">?</span>;
 
     <span class="prelude-val">Ok</span>(<span class="ident">Signed</span> {
         <span class="ident">public_key</span>: <span class="ident">pk_set</span>.<span class="ident">public_key</span>(),
@@ -913,5 +913,5 @@
     })
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>

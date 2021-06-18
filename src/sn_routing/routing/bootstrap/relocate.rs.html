@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/bootstrap/relocate.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>relocate.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/bootstrap/relocate.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>relocate.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../../settings.html"><img src="../../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
@@ -349,14 +349,14 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">ed25519</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
-    <span class="ident">node</span>::<span class="ident">Node</span>,
-    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
+    <span class="ident">messages::RoutingMsgUtils</span>,
+    <span class="ident">node::Node</span>,
+    <span class="ident">peer::PeerUtils</span>,
     <span class="ident">relocation</span>::{<span class="ident">RelocatePayloadUtils</span>, <span class="ident">SignedRelocateDetailsUtils</span>},
-    <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">Comm</span>,
+    <span class="ident">routing::comm::Comm</span>,
     <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
 };
-<span class="kw">use</span> <span class="ident">sn_data_types</span>::<span class="ident">PublicKey</span>;
+<span class="kw">use</span> <span class="ident">sn_data_types::PublicKey</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">node</span>::{
         <span class="ident">JoinAsRelocatedRequest</span>, <span class="ident">JoinAsRelocatedResponse</span>, <span class="ident">RelocatePayload</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>,
@@ -364,8 +364,8 @@
     },
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">MessageType</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections</span>::<span class="ident">HashSet</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
-<span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections::HashSet</span>, <span class="ident">net::SocketAddr</span>};
+<span class="kw">use</span> <span class="ident">tokio::sync::mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="doccomment">/// Re-join as a relocated node.</span>
@@ -373,7 +373,7 @@
     <span class="comment">// Communication api for outgoing messages.</span>
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Comm</span>,
     <span class="comment">// Receiver for incoming join response messages.</span>
-    <span class="ident">recv_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
+    <span class="ident">recv_rx</span>: <span class="ident">mpsc::Receiver</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     <span class="ident">node</span>: <span class="ident">Node</span>,
 }
 
@@ -381,7 +381,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
         <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Comm</span>,
         <span class="ident">node</span>: <span class="ident">Node</span>,
-        <span class="ident">recv_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
+        <span class="ident">recv_rx</span>: <span class="ident">mpsc::Receiver</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">comm</span>,
@@ -402,7 +402,7 @@
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">run</span>(
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-        <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">genesis_key</span>: <span class="ident">bls::PublicKey</span>,
         <span class="ident">relocate_details</span>: <span class="ident">SignedRelocateDetails</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">section_key</span> <span class="op">=</span> <span class="ident">relocate_details</span>.<span class="ident">destination_key</span>()<span class="question-mark">?</span>;
@@ -427,7 +427,7 @@
             .<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="comment">// Avoid sending more than one request to the same peer.</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">used_recipient</span> <span class="op">=</span> <span class="ident">HashSet</span>::<span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">used_recipient</span> <span class="op">=</span> <span class="ident">HashSet</span>::<span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span><span class="ident">::new</span>();
         <span class="kw">loop</span> {
             <span class="ident">used_recipient</span>.<span class="ident">extend</span>(<span class="ident">recipients</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">addr</span>)<span class="op">|</span> <span class="ident">addr</span>));
 
@@ -436,17 +436,17 @@
                 .<span class="kw">await</span><span class="question-mark">?</span>;
 
             <span class="kw">match</span> <span class="ident">response</span> {
-                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Approval</span> {
+                <span class="ident">JoinAsRelocatedResponse::Approval</span> {
                     <span class="ident">section_auth</span>,
                     <span class="ident">section_chain</span>,
                     ..
                 } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>((
                         <span class="self">self</span>.<span class="ident">node</span>,
-                        <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">genesis_key</span>, <span class="ident">section_chain</span>, <span class="ident">section_auth</span>)<span class="question-mark">?</span>,
+                        <span class="ident">Section::new</span>(<span class="ident">genesis_key</span>, <span class="ident">section_chain</span>, <span class="ident">section_auth</span>)<span class="question-mark">?</span>,
                     ));
                 }
-                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Retry</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">JoinAsRelocatedResponse::Retry</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">section_key</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">section_key</span> {
                         <span class="kw">continue</span>;
                     }
@@ -466,7 +466,7 @@
                         )<span class="question-mark">?</span>);
                     }
 
-                    <span class="macro">info</span><span class="macro">!</span>(
+                    <span class="macro">info!</span>(
                         <span class="string">&quot;Newer Join response for our prefix {:?} from {:?}&quot;</span>,
                         <span class="ident">section_auth</span>, <span class="ident">sender</span>
                     );
@@ -480,7 +480,7 @@
                     <span class="self">self</span>.<span class="ident">send_join_requests</span>(<span class="ident">join_request</span>, <span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">section_key</span>)
                         .<span class="kw">await</span><span class="question-mark">?</span>;
                 }
-                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Redirect</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">JoinAsRelocatedResponse::Redirect</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">section_key</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">section_key</span> {
                         <span class="kw">continue</span>;
                     }
@@ -494,10 +494,10 @@
                         .<span class="ident">collect</span>();
 
                     <span class="kw">if</span> <span class="ident">new_recipients</span>.<span class="ident">is_empty</span>() {
-                        <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Joining redirected to the same set of peers we already contacted - ignoring response&quot;</span>);
+                        <span class="macro">debug!</span>(<span class="string">&quot;Joining redirected to the same set of peers we already contacted - ignoring response&quot;</span>);
                         <span class="kw">continue</span>;
                     } <span class="kw">else</span> {
-                        <span class="macro">info</span><span class="macro">!</span>(
+                        <span class="macro">info!</span>(
                             <span class="string">&quot;Joining redirected to another set of peers: {:?}&quot;</span>,
                             <span class="ident">new_recipients</span>,
                         );
@@ -512,7 +512,7 @@
                         )<span class="question-mark">?</span>);
                     }
 
-                    <span class="macro">info</span><span class="macro">!</span>(
+                    <span class="macro">info!</span>(
                         <span class="string">&quot;Newer Join response for our prefix {:?} from {:?}&quot;</span>,
                         <span class="ident">section_auth</span>, <span class="ident">sender</span>
                     );
@@ -526,12 +526,12 @@
                     <span class="self">self</span>.<span class="ident">send_join_requests</span>(<span class="ident">join_request</span>, <span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">section_key</span>)
                         .<span class="kw">await</span><span class="question-mark">?</span>;
                 }
-                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">NodeNotReachable</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="macro">error</span><span class="macro">!</span>(
+                <span class="ident">JoinAsRelocatedResponse::NodeNotReachable</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="macro">error!</span>(
                         <span class="string">&quot;Node cannot join as relocated since it is not externally reachable: {}&quot;</span>,
                         <span class="ident">addr</span>
                     );
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">NodeNotReachable</span>(<span class="ident">addr</span>));
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::NodeNotReachable</span>(<span class="ident">addr</span>));
                 }
             }
         }
@@ -546,19 +546,19 @@
         <span class="comment">// We are relocating so we need to change our name.</span>
         <span class="comment">// Use a name that will match the destination even after multiple splits</span>
         <span class="kw">let</span> <span class="ident">extra_split_count</span> <span class="op">=</span> <span class="number">3</span>;
-        <span class="kw">let</span> <span class="ident">name_prefix</span> <span class="op">=</span> <span class="ident">Prefix</span>::<span class="ident">new</span>(
+        <span class="kw">let</span> <span class="ident">name_prefix</span> <span class="op">=</span> <span class="ident">Prefix::new</span>(
             <span class="ident">prefix</span>.<span class="ident">bit_count</span>() <span class="op">+</span> <span class="ident">extra_split_count</span>,
             <span class="kw-2">*</span><span class="ident">relocate_details</span>.<span class="ident">destination</span>()<span class="question-mark">?</span>,
         );
 
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">relocate_details</span>.<span class="ident">relocate_details</span>()<span class="question-mark">?</span>.<span class="ident">age</span>;
-        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
-        <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="ident">new_keypair</span>.<span class="ident">public</span>));
+        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">ed25519::gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
+        <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">XorName::from</span>(<span class="ident">PublicKey::from</span>(<span class="ident">new_keypair</span>.<span class="ident">public</span>));
         <span class="kw">let</span> <span class="ident">relocate_payload</span> <span class="op">=</span>
-            <span class="ident">RelocatePayload</span>::<span class="ident">new</span>(<span class="ident">relocate_details</span>, <span class="kw-2">&amp;</span><span class="ident">new_name</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>);
+            <span class="ident">RelocatePayload::new</span>(<span class="ident">relocate_details</span>, <span class="kw-2">&amp;</span><span class="ident">new_name</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>);
 
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Changing name to {}&quot;</span>, <span class="ident">new_name</span>);
-        <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;Changing name to {}&quot;</span>, <span class="ident">new_name</span>);
+        <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node::new</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">relocate_payload</span>)
     }
@@ -567,21 +567,21 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">join_request</span>: <span class="ident">JoinAsRelocatedRequest</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[(<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>)],
-        <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">section_key</span>: <span class="ident">bls::PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {:?}&quot;</span>, <span class="ident">join_request</span>, <span class="ident">recipients</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;Sending {:?} to {:?}&quot;</span>, <span class="ident">join_request</span>, <span class="ident">recipients</span>);
 
-        <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedRequest</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">join_request</span>));
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
+        <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant::JoinAsRelocatedRequest</span>(<span class="ident">Box::new</span>(<span class="ident">join_request</span>));
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg::single_src</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-            <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
+            <span class="ident">DstLocation::DirectAndUnrouted</span>,
             <span class="ident">variant</span>,
             <span class="ident">section_key</span>,
         )<span class="question-mark">?</span>;
 
         <span class="ident">send_message</span>(
             <span class="self">self</span>.<span class="ident">comm</span>,
-            <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
+            <span class="ident">MessageType::Routing</span> {
                 <span class="ident">msg</span>: <span class="ident">message</span>,
                 <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                     <span class="ident">dest</span>: <span class="ident">recipients</span>[<span class="number">0</span>].<span class="number">0</span>,
@@ -597,7 +597,7 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">receive_join_response</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">expected_genesis_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">expected_genesis_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls::PublicKey</span>,
         <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">JoinAsRelocatedResponse</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">destination</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">relocate_payload</span> {
@@ -607,20 +607,20 @@
 
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">routing_msg</span>, <span class="ident">sender</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">recv_rx</span>.<span class="ident">recv</span>().<span class="kw">await</span> {
             <span class="comment">// we are interested only in `JoinAsRelocatedResponse` type of messages</span>
-            <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedResponse</span>(<span class="ident">join_response</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">routing_msg</span>.<span class="ident">variant</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Variant::JoinAsRelocatedResponse</span>(<span class="ident">join_response</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">routing_msg</span>.<span class="ident">variant</span> {
                 <span class="kw">match</span> <span class="kw-2">*</span><span class="kw-2">*</span><span class="ident">join_response</span> {
-                    <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">NodeNotReachable</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">JoinAsRelocatedResponse::NodeNotReachable</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="kw-2">*</span><span class="ident">join_response</span>.<span class="ident">clone</span>(), <span class="ident">sender</span>))
                     }
-                    <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Retry</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>)
-                    <span class="op">|</span> <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Redirect</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">JoinAsRelocatedResponse::Retry</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>)
+                    <span class="op">|</span> <span class="ident">JoinAsRelocatedResponse::Redirect</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">destination</span>) {
-                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid JoinResponse bad prefix: {:?}&quot;</span>, <span class="ident">join_response</span>);
+                            <span class="macro">error!</span>(<span class="string">&quot;Invalid JoinResponse bad prefix: {:?}&quot;</span>, <span class="ident">join_response</span>);
                             <span class="kw">continue</span>;
                         }
 
                         <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">elders</span>.<span class="ident">is_empty</span>() {
-                            <span class="macro">error</span><span class="macro">!</span>(
+                            <span class="macro">error!</span>(
                                 <span class="string">&quot;Invalid JoinResponse, empty list of Elders: {:?}&quot;</span>,
                                 <span class="ident">join_response</span>
                             );
@@ -633,18 +633,18 @@
 
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="kw-2">*</span><span class="ident">join_response</span>.<span class="ident">clone</span>(), <span class="ident">sender</span>));
                     }
-                    <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Approval</span> {
+                    <span class="ident">JoinAsRelocatedResponse::Approval</span> {
                         <span class="kw-2">ref</span> <span class="ident">section_auth</span>,
                         <span class="kw-2">ref</span> <span class="ident">member_info</span>,
                         <span class="kw-2">ref</span> <span class="ident">section_chain</span>,
                     } <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="kw">if</span> <span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
-                            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore NodeApproval not for us&quot;</span>);
+                            <span class="macro">trace!</span>(<span class="string">&quot;Ignore NodeApproval not for us&quot;</span>);
                             <span class="kw">continue</span>;
                         }
 
                         <span class="kw">if</span> <span class="ident">expected_genesis_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">section_chain</span>.<span class="ident">root_key</span>() {
-                            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Genesis key doesn&#39;t match&quot;</span>);
+                            <span class="macro">trace!</span>(<span class="string">&quot;Genesis key doesn&#39;t match&quot;</span>);
                             <span class="kw">continue</span>;
                         }
 
@@ -658,7 +658,7 @@
                             <span class="kw">continue</span>;
                         }
 
-                        <span class="macro">trace</span><span class="macro">!</span>(
+                        <span class="macro">trace!</span>(
                             <span class="string">&quot;This node has been approved to join the network at {:?}!&quot;</span>,
                             <span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>,
                         );
@@ -669,11 +669,11 @@
             }
         }
 
-        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;RoutingMsg sender unexpectedly closed&quot;</span>);
+        <span class="macro">error!</span>(<span class="string">&quot;RoutingMsg sender unexpectedly closed&quot;</span>);
         <span class="comment">// TODO: consider more specific error here (e.g. `BootstrapInterrupted`)</span>
-        <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
+        <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidState</span>)
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="sn_routing" data-search-js="../../../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="sn_routing" data-search-index-js="../../../../search-index.js" data-search-js="../../../../search.js"></div>
     <script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script></body></html>

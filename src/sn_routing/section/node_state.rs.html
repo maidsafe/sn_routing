@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/section/node_state.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>node_state.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/section/node_state.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>node_state.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1"> 1</span>
 <span id="2"> 2</span>
 <span id="3"> 3</span>
@@ -82,9 +82,9 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error</span>::<span class="ident">Error</span>, <span class="ident">peer</span>::<span class="ident">PeerUtils</span>};
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">MembershipState</span>, <span class="ident">NodeState</span>, <span class="ident">Peer</span>};
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error::Error</span>, <span class="ident">peer::PeerUtils</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging::node</span>::{<span class="ident">MembershipState</span>, <span class="ident">NodeState</span>, <span class="ident">Peer</span>};
+<span class="kw">use</span> <span class="ident">xor_name::XorName</span>;
 
 <span class="doccomment">/// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent</span>
 <span class="doccomment">/// relocations during the beginning of a node&#39;s lifetime.</span>
@@ -119,7 +119,7 @@
     <span class="kw">fn</span> <span class="ident">joined</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">NodeState</span> {
         <span class="ident">NodeState</span> {
             <span class="ident">peer</span>,
-            <span class="ident">state</span>: <span class="ident">MembershipState</span>::<span class="ident">Joined</span>,
+            <span class="ident">state</span>: <span class="ident">MembershipState::Joined</span>,
         }
     }
 
@@ -131,11 +131,11 @@
     <span class="kw">fn</span> <span class="ident">leave</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">NodeState</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// Do not allow switching to `Left` when already relocated, to avoid rejoining with the</span>
         <span class="comment">// same name.</span>
-        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">MembershipState</span>::<span class="ident">Relocated</span>(<span class="kw">_</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">MembershipState::Relocated</span>(<span class="kw">_</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidState</span>);
         }
         <span class="prelude-val">Ok</span>(<span class="ident">NodeState</span> {
-            <span class="ident">state</span>: <span class="ident">MembershipState</span>::<span class="ident">Left</span>,
+            <span class="ident">state</span>: <span class="ident">MembershipState::Left</span>,
             ..<span class="self">self</span>
         })
     }
@@ -143,11 +143,11 @@
     <span class="comment">// Convert this info into one with the state changed to `Relocated`.</span>
     <span class="kw">fn</span> <span class="ident">relocate</span>(<span class="self">self</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">NodeState</span> {
         <span class="ident">NodeState</span> {
-            <span class="ident">state</span>: <span class="ident">MembershipState</span>::<span class="ident">Relocated</span>(<span class="ident">destination</span>),
+            <span class="ident">state</span>: <span class="ident">MembershipState::Relocated</span>(<span class="ident">destination</span>),
             ..<span class="self">self</span>
         }
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>

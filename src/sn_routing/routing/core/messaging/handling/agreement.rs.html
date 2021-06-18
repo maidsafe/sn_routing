@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/core/messaging/handling/agreement.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>agreement.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../../../../storage.js"></script><script src="../../../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/core/messaging/handling/agreement.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>agreement.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../../../../storage.js"></script><script src="../../../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../../../../settings.html"><img src="../../../../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
@@ -320,21 +320,21 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">cmp</span>;
+<span class="kw">use</span> <span class="ident">std::cmp</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">dkg</span>::<span class="ident">SectionSignedUtils</span>,
-    <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
-    <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
-    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
-    <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
+    <span class="ident">dkg::SectionSignedUtils</span>,
+    <span class="ident">error::Result</span>,
+    <span class="ident">messages::RoutingMsgUtils</span>,
+    <span class="ident">network::NetworkUtils</span>,
+    <span class="ident">peer::PeerUtils</span>,
+    <span class="ident">routing::command::Command</span>,
     <span class="ident">section</span>::{
         <span class="ident">ElderCandidatesUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionPeersUtils</span>, <span class="ident">SectionUtils</span>,
     },
     <span class="ident">Error</span>, <span class="ident">Event</span>, <span class="ident">MIN_AGE</span>,
 };
-<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
+<span class="kw">use</span> <span class="ident">secured_linked_list::SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">node</span>::{
         <span class="ident">MembershipState</span>, <span class="ident">NodeState</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SectionSigned</span>, <span class="ident">Signed</span>,
@@ -342,9 +342,9 @@
     },
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">SectionAuthorityProvider</span>,
 };
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
+<span class="kw">use</span> <span class="ident">xor_name::XorName</span>;
 
-<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Core</span>;
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::Core</span>;
 
 <span class="comment">// Agreement</span>
 <span class="kw">impl</span> <span class="ident">Core</span> {
@@ -353,10 +353,10 @@
         <span class="ident">proposal</span>: <span class="ident">Proposal</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;handle agreement on {:?}&quot;</span>, <span class="ident">proposal</span>);
+        <span class="macro">debug!</span>(<span class="string">&quot;handle agreement on {:?}&quot;</span>, <span class="ident">proposal</span>);
 
         <span class="kw">match</span> <span class="ident">proposal</span> {
-            <span class="ident">Proposal</span>::<span class="ident">Online</span> {
+            <span class="ident">Proposal::Online</span> {
                 <span class="ident">node_state</span>,
                 <span class="ident">previous_name</span>,
                 ..
@@ -364,27 +364,27 @@
                 <span class="self">self</span>.<span class="ident">handle_online_agreement</span>(<span class="ident">node_state</span>, <span class="ident">previous_name</span>, <span class="ident">signed</span>)
                     .<span class="kw">await</span>
             }
-            <span class="ident">Proposal</span>::<span class="ident">Offline</span>(<span class="ident">node_state</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Proposal::Offline</span>(<span class="ident">node_state</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_offline_agreement</span>(<span class="ident">node_state</span>, <span class="ident">signed</span>).<span class="kw">await</span>
             }
-            <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Proposal::SectionInfo</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_section_info_agreement</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>)
             }
-            <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Proposal::OurElders</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_our_elders_agreement</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>).<span class="kw">await</span>
             }
-            <span class="ident">Proposal</span>::<span class="ident">AccumulateAtSrc</span> { <span class="ident">message</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Proposal::AccumulateAtSrc</span> { <span class="ident">message</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">dest_name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="ident">message</span>.<span class="ident">dst</span>.<span class="ident">name</span>() {
                     <span class="ident">name</span>
                 } <span class="kw">else</span> {
-                    <span class="macro">error</span><span class="macro">!</span>(
+                    <span class="macro">error!</span>(
                         <span class="string">&quot;Not handling AccumulateAtSrc {:?}: No dst_name found&quot;</span>,
                         <span class="kw-2">*</span><span class="ident">message</span>
                     );
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidDstLocation</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidDstLocation</span>);
                 };
                 <span class="kw">let</span> <span class="ident">dest_section_pk</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">dst_key</span>;
-                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_accumulate_at_src_agreement</span>(
+                <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[<span class="self">self</span>.<span class="ident">handle_accumulate_at_src_agreement</span>(
                     <span class="kw-2">*</span><span class="ident">message</span>,
                     <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">clone</span>(),
                     <span class="ident">signed</span>,
@@ -394,9 +394,9 @@
                     },
                 )<span class="question-mark">?</span>])
             }
-            <span class="ident">Proposal</span>::<span class="ident">JoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Proposal::JoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">joins_allowed</span> <span class="op">=</span> <span class="ident">joins_allowed</span>.<span class="number">1</span>;
-                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
+                <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[])
             }
         }
     }
@@ -407,7 +407,7 @@
         <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec!</span>[];
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">old_info</span>) <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
@@ -416,8 +416,8 @@
         {
             <span class="comment">// This node is rejoin with same name.</span>
 
-            <span class="kw">if</span> <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">MembershipState</span>::<span class="ident">Left</span> {
-                <span class="macro">debug</span><span class="macro">!</span>(
+            <span class="kw">if</span> <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">MembershipState::Left</span> {
+                <span class="macro">debug!</span>(
                     <span class="string">&quot;Ignoring Online node {} - {:?} not Left.&quot;</span>,
                     <span class="ident">new_info</span>.<span class="ident">peer</span>.<span class="ident">name</span>(),
                     <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">state</span>,
@@ -426,7 +426,7 @@
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
             }
 
-            <span class="kw">let</span> <span class="ident">new_age</span> <span class="op">=</span> <span class="ident">cmp</span>::<span class="ident">max</span>(<span class="ident">MIN_AGE</span>, <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span>);
+            <span class="kw">let</span> <span class="ident">new_age</span> <span class="op">=</span> <span class="ident">cmp::max</span>(<span class="ident">MIN_AGE</span>, <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span>);
 
             <span class="kw">if</span> <span class="ident">new_age</span> <span class="op">&gt;</span> <span class="ident">MIN_AGE</span> {
                 <span class="comment">// TODO: consider handling the relocation inside the bootstrap phase, to avoid</span>
@@ -444,13 +444,13 @@
         };
 
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_member</span>(<span class="ident">new_info</span>.<span class="ident">clone</span>()) {
-            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;ignore Online: {:?}&quot;</span>, <span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>);
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+            <span class="macro">info!</span>(<span class="string">&quot;ignore Online: {:?}&quot;</span>, <span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[]);
         }
 
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;handle Online: {:?}&quot;</span>, <span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;handle Online: {:?}&quot;</span>, <span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>);
 
-        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">MemberJoined</span> {
+        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event::MemberJoined</span> {
             <span class="ident">name</span>: <span class="kw-2">*</span><span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>(),
             <span class="ident">previous_name</span>,
             <span class="ident">age</span>: <span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">age</span>(),
@@ -478,7 +478,7 @@
         <span class="ident">node_state</span>: <span class="ident">NodeState</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec!</span>[];
 
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">node_state</span>.<span class="ident">peer</span>;
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">peer</span>.<span class="ident">age</span>();
@@ -488,11 +488,11 @@
             <span class="ident">value</span>: <span class="ident">node_state</span>,
             <span class="ident">signed</span>,
         }) {
-            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;ignore Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
+            <span class="macro">info!</span>(<span class="string">&quot;ignore Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;handle Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;handle Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
 
         <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">relocate_peers</span>(<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">&amp;</span><span class="ident">signature</span>)<span class="question-mark">?</span>);
 
@@ -503,7 +503,7 @@
 
         <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span>);
 
-        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">MemberLeft</span> {
+        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event::MemberLeft</span> {
             <span class="ident">name</span>: <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(),
             <span class="ident">age</span>,
         })
@@ -517,11 +517,11 @@
         <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec!</span>[];
 
         <span class="kw">let</span> <span class="ident">equal_or_extension</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>() <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
             <span class="op">|</span><span class="op">|</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>().<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">SectionSigned</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>.<span class="ident">clone</span>());
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">SectionSigned::new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>.<span class="ident">clone</span>());
 
         <span class="kw">if</span> <span class="ident">equal_or_extension</span> {
             <span class="comment">// Our section of sub-section</span>
@@ -541,22 +541,22 @@
                 .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                 .<span class="ident">collect</span>();
             <span class="kw">if</span> <span class="op">!</span><span class="ident">sync_recipients</span>.<span class="ident">is_empty</span>() {
-                <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
+                <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">RoutingMsg::single_src</span>(
                     <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-                    <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
-                    <span class="ident">Variant</span>::<span class="ident">Sync</span> {
+                    <span class="ident">DstLocation::DirectAndUnrouted</span>,
+                    <span class="ident">Variant::Sync</span> {
                         <span class="ident">section</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(),
                         <span class="ident">network</span>: <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">clone</span>(),
                     },
                     <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">section_key</span>(),
                 )<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">sync_recipients</span>.<span class="ident">len</span>();
-                <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
+                <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">Command::send_message_to_nodes</span>(
                     <span class="ident">sync_recipients</span>,
                     <span class="ident">len</span>,
                     <span class="ident">sync_message</span>,
                     <span class="ident">DestInfo</span> {
-                        <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
+                        <span class="ident">dest</span>: <span class="ident">XorName::random</span>(),
                         <span class="ident">dest_section_pk</span>: <span class="ident">signed</span>.<span class="ident">public_key</span>,
                     },
                 ));
@@ -566,7 +566,7 @@
             <span class="kw">let</span> <span class="ident">our_elders_recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span>
                 <span class="ident">infos</span>.<span class="ident">iter</span>().<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peers</span>()).<span class="ident">collect</span>();
             <span class="ident">commands</span>.<span class="ident">extend</span>(
-                <span class="self">self</span>.<span class="ident">send_proposal</span>(<span class="kw-2">&amp;</span><span class="ident">our_elders_recipients</span>, <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">section_auth</span>))<span class="question-mark">?</span>,
+                <span class="self">self</span>.<span class="ident">send_proposal</span>(<span class="kw-2">&amp;</span><span class="ident">our_elders_recipients</span>, <span class="ident">Proposal::OurElders</span>(<span class="ident">section_auth</span>))<span class="question-mark">?</span>,
             );
         } <span class="kw">else</span> {
             <span class="comment">// Other section</span>
@@ -588,7 +588,7 @@
             .<span class="ident">split_barrier</span>
             .<span class="ident">process</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(), <span class="ident">section_auth</span>, <span class="ident">key_signed</span>);
         <span class="kw">if</span> <span class="ident">updates</span>.<span class="ident">is_empty</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[]);
         }
 
         <span class="kw">let</span> <span class="ident">snapshot</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state_snapshot</span>();
@@ -615,9 +615,9 @@
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">section_src</span>(<span class="ident">message</span>, <span class="ident">signed</span>, <span class="ident">section_chain</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg::section_src</span>(<span class="ident">message</span>, <span class="ident">signed</span>, <span class="ident">section_chain</span>)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
+        <span class="prelude-val">Ok</span>(<span class="ident">Command::HandleMessage</span> {
             <span class="ident">message</span>,
             <span class="ident">sender</span>: <span class="prelude-val">None</span>,
             <span class="ident">dest_info</span>,
@@ -625,5 +625,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../../../../" data-current-crate="sn_routing" data-search-js="../../../../../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../../../../" data-current-crate="sn_routing" data-search-index-js="../../../../../../search-index.js" data-search-js="../../../../../../search.js"></div>
     <script src="../../../../../../main.js"></script><script src="../../../../../../source-script.js"></script><script src="../../../../../../source-files.js"></script></body></html>

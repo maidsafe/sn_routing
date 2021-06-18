@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/messages/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/messages/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
@@ -463,24 +463,24 @@
 <span class="kw">mod</span> <span class="ident">plain_message</span>;
 <span class="kw">mod</span> <span class="ident">src_authority</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{<span class="ident">plain_message</span>::<span class="ident">PlainMessageUtils</span>, <span class="ident">src_authority</span>::<span class="ident">SrcAuthorityUtils</span>};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{<span class="ident">plain_message::PlainMessageUtils</span>, <span class="ident">src_authority::SrcAuthorityUtils</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">dkg</span>::<span class="ident">SectionSignedUtils</span>,
+    <span class="ident">dkg::SectionSignedUtils</span>,
     <span class="ident">ed25519</span>::{<span class="self">self</span>, <span class="ident">Verifier</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">node</span>::<span class="ident">Node</span>,
+    <span class="ident">node::Node</span>,
     <span class="ident">section</span>::{<span class="ident">SectionKeyShare</span>, <span class="ident">SectionUtils</span>},
 };
-<span class="kw">use</span> <span class="ident">secured_linked_list</span>::{<span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SecuredLinkedListError</span>, <span class="ident">SecuredLinkedList</span>};
-<span class="kw">use</span> <span class="ident">serde</span>::<span class="ident">Serialize</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">Signed</span>, <span class="ident">SignedShare</span>};
+<span class="kw">use</span> <span class="ident">secured_linked_list</span>::{<span class="ident">error::Error</span> <span class="kw">as</span> <span class="ident">SecuredLinkedListError</span>, <span class="ident">SecuredLinkedList</span>};
+<span class="kw">use</span> <span class="ident">serde::Serialize</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging::node</span>::{<span class="ident">Signed</span>, <span class="ident">SignedShare</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">node</span>::{<span class="ident">JoinResponse</span>, <span class="ident">PlainMessage</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SrcAuthority</span>, <span class="ident">Variant</span>},
     <span class="ident">Aggregation</span>, <span class="ident">DstLocation</span>, <span class="ident">MessageId</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::<span class="ident">Debug</span>;
-<span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
+<span class="kw">use</span> <span class="ident">std::fmt::Debug</span>;
+<span class="kw">use</span> <span class="ident">thiserror::Error</span>;
+<span class="kw">use</span> <span class="ident">xor_name::XorName</span>;
 
 <span class="doccomment">/// Message sent over the network.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">RoutingMsgUtils</span> {
@@ -492,7 +492,7 @@
         <span class="ident">src</span>: <span class="ident">SrcAuthority</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
-        <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">section_key</span>: <span class="ident">bls::PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">RoutingMsg</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Creates a message signed using a BLS KeyShare for destination accumulation</span>
@@ -515,7 +515,7 @@
         <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
-        <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">section_key</span>: <span class="ident">bls::PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">RoutingMsg</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Creates a signed message from a section.</span>
@@ -527,7 +527,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">RoutingMsg</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Verify this message is properly signed and trusted.</span>
-    <span class="kw">fn</span> <span class="ident">verify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">verify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls::PublicKey</span><span class="op">&gt;</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">trusted_keys</span>: <span class="ident">I</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">VerifyStatus</span><span class="op">&gt;</span>;
@@ -535,56 +535,56 @@
     <span class="doccomment">/// Getter</span>
     <span class="kw">fn</span> <span class="ident">signed</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">verify_variant</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span><span class="op">&gt;</span>(
+    <span class="kw">fn</span> <span class="ident">verify_variant</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls::PublicKey</span><span class="op">&gt;</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">trusted_keys</span>: <span class="ident">I</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">VerifyStatus</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Returns an updated message with the provided Section key i.e. known to be latest.</span>
-    <span class="kw">fn</span> <span class="ident">updated_with_latest_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>);
+    <span class="kw">fn</span> <span class="ident">updated_with_latest_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section_pk</span>: <span class="ident">bls::PublicKey</span>);
 }
 
 <span class="kw">impl</span> <span class="ident">RoutingMsgUtils</span> <span class="kw">for</span> <span class="ident">RoutingMsg</span> {
     <span class="doccomment">/// Check the signature is valid. Only called on message receipt.</span>
     <span class="kw">fn</span> <span class="ident">check_signature</span>(<span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">RoutingMsg</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">signed_bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
+        <span class="kw">let</span> <span class="ident">signed_bytes</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">dst</span>,
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">variant</span>,
         })
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidMessage</span>)<span class="question-mark">?</span>;
 
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">src</span> {
-            <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
+            <span class="ident">SrcAuthority::Node</span> {
                 <span class="ident">public_key</span>,
                 <span class="ident">signature</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed_bytes</span>, <span class="ident">signature</span>).<span class="ident">is_err</span>() {
-                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed signature: {:?}&quot;</span>, <span class="ident">msg</span>);
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CreateError</span>(<span class="ident">CreateError</span>::<span class="ident">FailedSignature</span>));
+                    <span class="macro">error!</span>(<span class="string">&quot;Failed signature: {:?}&quot;</span>, <span class="ident">msg</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::CreateError</span>(<span class="ident">CreateError::FailedSignature</span>));
                 }
             }
-            <span class="ident">SrcAuthority</span>::<span class="ident">BlsShare</span> { <span class="ident">signed_share</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SrcAuthority::BlsShare</span> { <span class="ident">signed_share</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">signed_share</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed_bytes</span>) {
-                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed signature: {:?}&quot;</span>, <span class="ident">msg</span>);
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CreateError</span>(<span class="ident">CreateError</span>::<span class="ident">FailedSignature</span>));
+                    <span class="macro">error!</span>(<span class="string">&quot;Failed signature: {:?}&quot;</span>, <span class="ident">msg</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::CreateError</span>(<span class="ident">CreateError::FailedSignature</span>));
                 }
 
                 <span class="kw">if</span> <span class="ident">signed_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">msg</span>.<span class="ident">section_pk</span> {
-                    <span class="macro">error</span><span class="macro">!</span>(
+                    <span class="macro">error!</span>(
                         <span class="string">&quot;Signed share public key doesn&#39;t match signed chain last key: {:?}&quot;</span>,
                         <span class="ident">msg</span>
                     );
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CreateError</span>(<span class="ident">CreateError</span>::<span class="ident">FailedSignature</span>));
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::CreateError</span>(<span class="ident">CreateError::FailedSignature</span>));
                 }
             }
-            <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SrcAuthority::Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">msg</span>.<span class="ident">section_pk</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">signature</span>, <span class="kw-2">&amp;</span><span class="ident">signed_bytes</span>) {
-                    <span class="macro">error</span><span class="macro">!</span>(
+                    <span class="macro">error!</span>(
                         <span class="string">&quot;Failed signature: {:?} (Section PK: {:?})&quot;</span>,
                         <span class="ident">msg</span>, <span class="ident">msg</span>.<span class="ident">section_pk</span>
                     );
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CreateError</span>(<span class="ident">CreateError</span>::<span class="ident">FailedSignature</span>));
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::CreateError</span>(<span class="ident">CreateError::FailedSignature</span>));
                 }
             }
         }
@@ -597,15 +597,15 @@
         <span class="ident">src</span>: <span class="ident">SrcAuthority</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
-        <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">section_pk</span>: <span class="ident">bls::PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">RoutingMsg</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// Create message id from src authority signature</span>
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">src</span> {
-            <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> { <span class="ident">signature</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">MessageId</span>::<span class="ident">from_content</span>(<span class="ident">signature</span>),
-            <span class="ident">SrcAuthority</span>::<span class="ident">BlsShare</span> { <span class="ident">signed_share</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">MessageId</span>::<span class="ident">from_content</span>(<span class="kw-2">&amp;</span><span class="ident">signed_share</span>.<span class="ident">signature_share</span>.<span class="number">0</span>)
+            <span class="ident">SrcAuthority::Node</span> { <span class="ident">signature</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">MessageId::from_content</span>(<span class="ident">signature</span>),
+            <span class="ident">SrcAuthority::BlsShare</span> { <span class="ident">signed_share</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">MessageId::from_content</span>(<span class="kw-2">&amp;</span><span class="ident">signed_share</span>.<span class="ident">signature_share</span>.<span class="number">0</span>)
             }
-            <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">MessageId</span>::<span class="ident">from_content</span>(<span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">signature</span>),
+            <span class="ident">SrcAuthority::Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">MessageId::from_content</span>(<span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">signature</span>),
         }
         .<span class="ident">unwrap_or_default</span>();
 
@@ -613,7 +613,7 @@
             <span class="ident">id</span>,
             <span class="ident">src</span>,
             <span class="ident">dst</span>,
-            <span class="ident">aggregation</span>: <span class="ident">Aggregation</span>::<span class="prelude-val">None</span>,
+            <span class="ident">aggregation</span>: <span class="ident">Aggregation::None</span>,
             <span class="ident">variant</span>,
             <span class="ident">section_pk</span>,
         };
@@ -629,11 +629,11 @@
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
         <span class="ident">section_chain</span>: <span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">serialized</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
+        <span class="kw">let</span> <span class="ident">serialized</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">dst</span>,
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="ident">variant</span>,
         })
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidMessage</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">signature_share</span> <span class="op">=</span> <span class="ident">key_share</span>.<span class="ident">secret_key_share</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>);
         <span class="kw">let</span> <span class="ident">signed_share</span> <span class="op">=</span> <span class="ident">SignedShare</span> {
@@ -642,19 +642,19 @@
             <span class="ident">signature_share</span>,
         };
 
-        <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority</span>::<span class="ident">BlsShare</span> {
+        <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority::BlsShare</span> {
             <span class="ident">src_name</span>,
             <span class="ident">signed_share</span>,
             <span class="ident">section_chain</span>: <span class="ident">section_chain</span>.<span class="ident">clone</span>(),
         };
 
-        <span class="self">Self</span>::<span class="ident">new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="kw-2">*</span><span class="ident">section_chain</span>.<span class="ident">last_key</span>())
+        <span class="self">Self</span><span class="ident">::new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="kw-2">*</span><span class="ident">section_chain</span>.<span class="ident">last_key</span>())
     }
 
     <span class="doccomment">/// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.</span>
     <span class="doccomment">/// Returns errors if src is not `BlsShare` or if the signed is invalid.</span>
     <span class="kw">fn</span> <span class="ident">into_dst_accumulated</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">signed</span>: <span class="ident">Signed</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> (<span class="ident">signed_share</span>, <span class="ident">src_name</span>, <span class="ident">section_chain</span>) <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="ident">SrcAuthority</span>::<span class="ident">BlsShare</span> {
+        <span class="kw">let</span> (<span class="ident">signed_share</span>, <span class="ident">src_name</span>, <span class="ident">section_chain</span>) <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="ident">SrcAuthority::BlsShare</span> {
             <span class="ident">signed_share</span>,
             <span class="ident">src_name</span>,
             <span class="ident">section_chain</span>,
@@ -662,27 +662,27 @@
         {
             (<span class="ident">signed_share</span>.<span class="ident">clone</span>(), <span class="kw-2">*</span><span class="ident">src_name</span>, <span class="ident">section_chain</span>)
         } <span class="kw">else</span> {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;not a message for dst accumulation&quot;</span>);
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;not a message for dst accumulation&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         };
 
         <span class="kw">if</span> <span class="ident">signed_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">signed</span>.<span class="ident">public_key</span> {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;signed public key doesn&#39;t match signed share public key&quot;</span>);
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;signed public key doesn&#39;t match signed share public key&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         }
 
         <span class="kw">if</span> <span class="ident">signed</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section_pk</span> {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;signed public key doesn&#39;t match the attached section PK&quot;</span>);
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+            <span class="macro">error!</span>(<span class="string">&quot;signed public key doesn&#39;t match the attached section PK&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
         }
 
-        <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signable_view</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signable_view</span>()).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidMessage</span>)<span class="question-mark">?</span>;
 
         <span class="kw">if</span> <span class="op">!</span><span class="ident">signed</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">FailedSignature</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::FailedSignature</span>);
         }
 
-        <span class="self">self</span>.<span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> {
+        <span class="self">self</span>.<span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority::Section</span> {
             <span class="ident">signed</span>,
             <span class="ident">src_name</span>,
             <span class="ident">section_chain</span>: <span class="ident">section_chain</span>.<span class="ident">clone</span>(),
@@ -703,21 +703,21 @@
         <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
-        <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="ident">section_pk</span>: <span class="ident">bls::PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">serialized</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
+        <span class="kw">let</span> <span class="ident">serialized</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">dst</span>,
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="ident">variant</span>,
         })
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidMessage</span>)<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">ed25519</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>, <span class="kw-2">&amp;</span><span class="ident">node</span>.<span class="ident">keypair</span>);
-        <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
+        <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">ed25519::sign</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>, <span class="kw-2">&amp;</span><span class="ident">node</span>.<span class="ident">keypair</span>);
+        <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority::Node</span> {
             <span class="ident">public_key</span>: <span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">public</span>,
             <span class="ident">signature</span>,
         };
 
-        <span class="ident">RoutingMsg</span>::<span class="ident">new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="ident">section_pk</span>)
+        <span class="ident">RoutingMsg::new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="ident">section_pk</span>)
     }
 
     <span class="doccomment">/// Creates a signed message from a section.</span>
@@ -727,8 +727,8 @@
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
         <span class="ident">section_chain</span>: <span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="self">Self</span>::<span class="ident">new_signed</span>(
-            <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> {
+        <span class="self">Self</span><span class="ident">::new_signed</span>(
+            <span class="ident">SrcAuthority::Section</span> {
                 <span class="ident">src_name</span>: <span class="ident">plain</span>.<span class="ident">src</span>,
                 <span class="ident">signed</span>,
                 <span class="ident">section_chain</span>: <span class="ident">section_chain</span>.<span class="ident">clone</span>(),
@@ -742,61 +742,61 @@
     <span class="doccomment">/// Verify this message is properly signed and trusted.</span>
     <span class="kw">fn</span> <span class="ident">verify</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">trusted_keys</span>: <span class="ident">I</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">VerifyStatus</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+        <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls::PublicKey</span><span class="op">&gt;</span>,
     {
-        <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
+        <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode::serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">dst</span>,
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">variant</span>,
         })
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::InvalidMessage</span>)<span class="question-mark">?</span>;
 
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">src</span> {
-            <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
+            <span class="ident">SrcAuthority::Node</span> {
                 <span class="ident">public_key</span>,
                 <span class="ident">signature</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>, <span class="ident">signature</span>).<span class="ident">is_err</span>() {
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">FailedSignature</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::FailedSignature</span>);
                 }
 
                 <span class="comment">// Variant-specific verification.</span>
                 <span class="self">self</span>.<span class="ident">verify_variant</span>(<span class="ident">trusted_keys</span>)
             }
-            <span class="ident">SrcAuthority</span>::<span class="ident">BlsShare</span> {
+            <span class="ident">SrcAuthority::BlsShare</span> {
                 <span class="ident">signed_share</span>,
                 <span class="ident">section_chain</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// Signed chain is required for accumulation at destination.</span>
                 <span class="kw">if</span> <span class="ident">signed_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>() <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section_pk</span> {
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
                 }
 
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">signed_share</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">FailedSignature</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::FailedSignature</span>);
                 }
 
                 <span class="kw">if</span> <span class="ident">section_chain</span>.<span class="ident">check_trust</span>(<span class="ident">trusted_keys</span>) {
-                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>)
+                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Full</span>)
                 } <span class="kw">else</span> {
-                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>)
+                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Unknown</span>)
                 }
             }
-            <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> {
+            <span class="ident">SrcAuthority::Section</span> {
                 <span class="ident">signed</span>,
                 <span class="ident">section_chain</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// Signed chain is required for section-src messages.</span>
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section_pk</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">signature</span>, <span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">FailedSignature</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::FailedSignature</span>);
                 }
 
                 <span class="kw">if</span> <span class="ident">section_chain</span>.<span class="ident">check_trust</span>(<span class="ident">trusted_keys</span>) {
-                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>)
+                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Full</span>)
                 } <span class="kw">else</span> {
-                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>)
+                    <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Unknown</span>)
                 }
             }
         }
@@ -804,7 +804,7 @@
 
     <span class="doccomment">/// Getter</span>
     <span class="kw">fn</span> <span class="ident">signed</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">src</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">SrcAuthority::Section</span> { <span class="ident">signed</span>, .. } <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">src</span> {
             <span class="prelude-val">Some</span>(<span class="ident">signed</span>.<span class="ident">clone</span>())
         } <span class="kw">else</span> {
             <span class="prelude-val">None</span>
@@ -813,11 +813,11 @@
 
     <span class="kw">fn</span> <span class="ident">verify_variant</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">trusted_keys</span>: <span class="ident">I</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">VerifyStatus</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+        <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls::PublicKey</span><span class="op">&gt;</span>,
     {
         <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">variant</span> {
-            <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">resp</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="kw">let</span> <span class="ident">JoinResponse</span>::<span class="ident">Approval</span> {
+            <span class="ident">Variant::JoinResponse</span>(<span class="ident">resp</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="kw">let</span> <span class="ident">JoinResponse::Approval</span> {
                     <span class="kw-2">ref</span> <span class="ident">section_auth</span>,
                     <span class="kw-2">ref</span> <span class="ident">node_state</span>,
                     <span class="kw-2">ref</span> <span class="ident">section_chain</span>,
@@ -825,34 +825,34 @@
                 } <span class="op">=</span> <span class="kw-2">*</span><span class="kw-2">*</span><span class="ident">resp</span>
                 {
                     <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>) {
-                        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+                        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
                     }
 
                     <span class="kw">if</span> <span class="op">!</span><span class="ident">node_state</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>) {
-                        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
+                        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::InvalidMessage</span>);
                     }
 
                     <span class="ident">section_chain</span>
                 } <span class="kw">else</span> {
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>);
+                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Full</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">SectionKnowledge</span> {
+            <span class="ident">Variant::SectionKnowledge</span> {
                 <span class="ident">src_info</span>: (<span class="kw">_</span>, <span class="kw-2">ref</span> <span class="ident">chain</span>),
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">chain</span>,
-            <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">section</span>.<span class="ident">chain</span>(),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>),
+            <span class="ident">Variant::Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">section</span>.<span class="ident">chain</span>(),
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Full</span>),
         };
 
         <span class="kw">if</span> <span class="ident">proof_chain</span>.<span class="ident">check_trust</span>(<span class="ident">trusted_keys</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>)
+            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Full</span>)
         } <span class="kw">else</span> {
-            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>)
+            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus::Unknown</span>)
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">updated_with_latest_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>) {
+    <span class="kw">fn</span> <span class="ident">updated_with_latest_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section_pk</span>: <span class="ident">bls::PublicKey</span>) {
         <span class="self">self</span>.<span class="ident">section_pk</span> <span class="op">=</span> <span class="ident">section_pk</span>
     }
 }
@@ -905,5 +905,5 @@
     <span class="kw">pub</span> <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Variant</span>,
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/node.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>node.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/node.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>node.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1"> 1</span>
 <span id="2"> 2</span>
 <span id="3"> 3</span>
@@ -103,14 +103,14 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">peer</span>::<span class="ident">PeerUtils</span>;
-<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
-<span class="kw">use</span> <span class="ident">sn_data_types</span>::<span class="ident">PublicKey</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::<span class="ident">Peer</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::peer::PeerUtils</span>;
+<span class="kw">use</span> <span class="ident">ed25519_dalek::Keypair</span>;
+<span class="kw">use</span> <span class="ident">sn_data_types::PublicKey</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging::node::Peer</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Display</span>, <span class="ident">Formatter</span>},
-    <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
-    <span class="ident">sync</span>::<span class="ident">Arc</span>,
+    <span class="ident">net::SocketAddr</span>,
+    <span class="ident">sync::Arc</span>,
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">XorName</span>, <span class="ident">XOR_NAME_LEN</span>};
 
@@ -127,17 +127,17 @@
 <span class="kw">impl</span> <span class="ident">Node</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="ident">Keypair</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">keypair</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">keypair</span>),
+            <span class="ident">keypair</span>: <span class="ident">Arc::new</span>(<span class="ident">keypair</span>),
             <span class="ident">addr</span>,
         }
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Peer</span> {
-        <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="self">self</span>.<span class="ident">name</span>(), <span class="self">self</span>.<span class="ident">addr</span>)
+        <span class="ident">Peer::new</span>(<span class="self">self</span>.<span class="ident">name</span>(), <span class="self">self</span>.<span class="ident">addr</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
-        <span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="self">self</span>.<span class="ident">keypair</span>.<span class="ident">public</span>))
+        <span class="ident">XorName::from</span>(<span class="ident">PublicKey::from</span>(<span class="self">self</span>.<span class="ident">keypair</span>.<span class="ident">public</span>))
     }
 
     <span class="comment">// Last byte of the name represents the age.</span>
@@ -147,13 +147,13 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Display</span> <span class="kw">for</span> <span class="ident">Node</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="self">self</span>.<span class="ident">name</span>())
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
+        <span class="macro">write!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="self">self</span>.<span class="ident">name</span>())
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Node</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;Node&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">name</span>())
             .<span class="ident">field</span>(<span class="string">&quot;addr&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">addr</span>)
@@ -165,23 +165,23 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">test_utils</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">ed25519</span>;
-    <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
-    <span class="kw">use</span> <span class="ident">proptest</span>::{<span class="ident">collection</span>::<span class="ident">SizeRange</span>, <span class="ident">prelude</span>::<span class="kw-2">*</span>};
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::ed25519</span>;
+    <span class="kw">use</span> <span class="ident">itertools::Itertools</span>;
+    <span class="kw">use</span> <span class="ident">proptest</span>::{<span class="ident">collection::SizeRange</span>, <span class="ident">prelude</span>::<span class="kw-2">*</span>};
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">arbitrary_node</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Strategy</span><span class="op">&lt;</span><span class="ident">Value</span> <span class="op">=</span> <span class="ident">Node</span><span class="op">&gt;</span> {
         (
-            <span class="ident">ed25519</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_keypair</span>(),
+            <span class="ident">ed25519::test_utils::arbitrary_keypair</span>(),
             <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>(),
         )
-            .<span class="ident">prop_map</span>(<span class="op">|</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>)<span class="op">|</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>))
+            .<span class="ident">prop_map</span>(<span class="op">|</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>)<span class="op">|</span> <span class="ident">Node::new</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>))
     }
 
     <span class="comment">// Generate Vec&lt;Node&gt; where no two nodes have the same name.</span>
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">arbitrary_unique_nodes</span>(
         <span class="ident">count</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">SizeRange</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Strategy</span><span class="op">&lt;</span><span class="ident">Value</span> <span class="op">=</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Node</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="ident">proptest</span>::<span class="ident">collection</span>::<span class="ident">vec</span>(<span class="ident">arbitrary_node</span>(), <span class="ident">count</span>).<span class="ident">prop_filter</span>(<span class="string">&quot;non-unique keys&quot;</span>, <span class="op">|</span><span class="ident">nodes</span><span class="op">|</span> {
+        <span class="ident">proptest::collection::vec</span>(<span class="ident">arbitrary_node</span>(), <span class="ident">count</span>).<span class="ident">prop_filter</span>(<span class="string">&quot;non-unique keys&quot;</span>, <span class="op">|</span><span class="ident">nodes</span><span class="op">|</span> {
             <span class="ident">nodes</span>
                 .<span class="ident">iter</span>()
                 .<span class="ident">unique_by</span>(<span class="op">|</span><span class="ident">node</span><span class="op">|</span> <span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">secret</span>.<span class="ident">as_bytes</span>())
@@ -191,5 +191,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="sn_routing" data-search-js="../../search-index.js"></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="sn_routing" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script></body></html>
