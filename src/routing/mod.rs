@@ -485,7 +485,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     let span = {
         let mut state = dispatcher.core.write().await;
 
-        if !state.add_to_filter(&wire_msg.msg_id()).await {
+        if !state.add_to_filter(&wire_msg).await {
             trace!(
                 "not handling message - already handled: {:?}",
                 wire_msg.msg_id()

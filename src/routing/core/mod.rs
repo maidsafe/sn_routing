@@ -31,7 +31,7 @@ use secured_linked_list::SecuredLinkedList;
 use sn_messaging::node::SignatureAggregator;
 use sn_messaging::{
     node::{Network, Proposal, RoutingMsg, Section, SectionSigned, Variant},
-    DestInfo, DstLocation, MessageId, SectionAuthorityProvider,
+    DestInfo, DstLocation, MessageId, SectionAuthorityProvider, WireMsg,
 };
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
@@ -92,8 +92,11 @@ impl Core {
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
 
-    pub async fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
-        self.msg_filter.add_to_filter(msg_id).await
+    pub async fn add_to_filter(&mut self, wire_msg: &WireMsg) -> bool {
+        if let Ok(true) = wire_msg.is_join_request() {
+            return true;
+        }
+        self.msg_filter.add_to_filter(&wire_msg.msg_id()).await
     }
 
     async fn check_for_entropy(
